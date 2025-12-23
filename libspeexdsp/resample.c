@@ -594,11 +594,17 @@ static int multiply_frac(spx_uint32_t *result, spx_uint32_t value, spx_uint32_t 
 {
    spx_uint32_t major = value / den;
    spx_uint32_t remain = value % den;
-   /* TODO: Could use 64 bits operation to check for overflow. But only guaranteed in C99+ */
+#if __STDC_VERSION__ >= 199901L
+   uint64_t r = (uint64_t)remain * (uint64_t)num / (uint64_t)den + (uint64_t)major * (uint64_t)num;
+   if (r > UINT32_MAX)
+      return RESAMPLER_ERR_OVERFLOW;
+   *result = (spx_uint32_t)r;
+#else
    if (remain > UINT32_MAX / num || major > UINT32_MAX / num
        || major * num > UINT32_MAX - remain * num / den)
       return RESAMPLER_ERR_OVERFLOW;
    *result = remain * num / den + major * num;
+#endif
    return RESAMPLER_ERR_SUCCESS;
 }
 
