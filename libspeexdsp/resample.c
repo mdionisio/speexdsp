@@ -1116,7 +1116,10 @@ static inline spx_uint32_t compute_gcd(spx_uint32_t a, spx_uint32_t b)
 EXPORT int speex_resampler_set_rate_frac(SpeexResamplerState *st, spx_uint32_t ratio_num, spx_uint32_t ratio_den, spx_uint32_t in_rate, spx_uint32_t out_rate)
 {
    spx_uint32_t fact;
-   spx_uint32_t old_den;
+   spx_uint32_t old_in_rate = st->in_rate;
+   spx_uint32_t old_out_rate = st->out_rate;
+   spx_uint32_t old_num_rate = st->num_rate;
+   spx_uint32_t old_den = st->den_rate;
    spx_uint32_t i;
 
    if (ratio_num == 0 || ratio_den == 0)
@@ -1125,7 +1128,6 @@ EXPORT int speex_resampler_set_rate_frac(SpeexResamplerState *st, spx_uint32_t r
    if (st->in_rate == in_rate && st->out_rate == out_rate && st->num_rate == ratio_num && st->den_rate == ratio_den)
       return RESAMPLER_ERR_SUCCESS;
 
-   old_den = st->den_rate;
    st->in_rate = in_rate;
    st->out_rate = out_rate;
    st->num_rate = ratio_num;
@@ -1136,12 +1138,28 @@ EXPORT int speex_resampler_set_rate_frac(SpeexResamplerState *st, spx_uint32_t r
    st->num_rate /= fact;
    st->den_rate /= fact;
 
-   if (old_den > 0)
+   spx_uint32_t samp_frac_num[st->nb_channels];
+   for (i=0;i<st->nb_channels;i++)
+   {
+      samp_frac_num[i] = st->samp_frac_num[i];
+   }
+   if ((old_den > 0) && (old_den != st->den_rate))
    {
       for (i=0;i<st->nb_channels;i++)
       {
+         samp_frac_num[i] = st->samp_frac_num[i];
          if (multiply_frac(&st->samp_frac_num[i],st->samp_frac_num[i],st->den_rate,old_den) != RESAMPLER_ERR_SUCCESS)
+         {
+            for (spx_uint32_t j=0;j<=i;j++)
+            {
+               st->samp_frac_num[j] = samp_frac_num[j];
+            }
+            st->in_rate = old_in_rate;
+            st->out_rate = old_out_rate;
+            st->num_rate = old_num_rate;
+            st->den_rate = old_den;
             return RESAMPLER_ERR_OVERFLOW;
+         }
          /* Safety net */
          if (st->samp_frac_num[i] >= st->den_rate)
             st->samp_frac_num[i] = st->den_rate-1;
@@ -1149,7 +1167,21 @@ EXPORT int speex_resampler_set_rate_frac(SpeexResamplerState *st, spx_uint32_t r
    }
 
    if (st->initialised)
-      return update_filter(st);
+   {
+      int r = update_filter(st);
+      if (r != RESAMPLER_ERR_SUCCESS)
+      {
+         for (i=0;i<st->nb_channels;i++)
+         {
+            st->samp_frac_num[i] = samp_frac_num[i];
+         }
+         st->in_rate = old_in_rate;
+         st->out_rate = old_out_rate;
+         st->num_rate = old_num_rate;
+         st->den_rate = old_den;
+         return r;
+      }
+   }
    return RESAMPLER_ERR_SUCCESS;
 }
 
